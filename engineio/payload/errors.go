@@ -48,10 +48,17 @@ func (e retryError) Temporary() bool {
 	return true
 }
 
-var errPaused = retryError{"paused"}
+var (
+	errPaused         = retryError{"paused"}
+	errTimeout        = errors.New("timeout")
+	errInvalidPayload = errors.New("invalid payload")
+	errOverlap        = errors.New("overlap")
+)
 
-var errTimeout = errors.New("timeout")
-
-var errInvalidPayload = errors.New("invalid payload")
-
-var errOverlap = errors.New("overlap")
+var (
+	errPayloadPaused = newOpError("payload", errPaused)
+	errReadTimeout   = newOpError("read", errTimeout)
+	errWriteTimeout  = newOpError("write", errTimeout)
+	errReadOverlap   = newOpError("read", errOverlap)
+	errWriteOverlap  = newOpError("write", errOverlap)
+)

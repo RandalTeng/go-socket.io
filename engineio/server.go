@@ -137,6 +137,11 @@ func (s *Server) Count() int {
 	return s.sessions.Count()
 }
 
+// Get session from sessions pool. Experimental API.
+func (s *Server) Get(sid string) {
+	s.sessions.Get(sid)
+}
+
 // Remove session from sessions pool. Experimental API.
 func (s *Server) Remove(sid string) {
 	s.sessions.Remove(sid)

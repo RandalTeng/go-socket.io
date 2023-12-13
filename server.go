@@ -203,6 +203,11 @@ func (s *Server) Count() int {
 	return s.engine.Count()
 }
 
+// Get session from sessions pool. Fixed the sessions map leak(connections, mem).
+func (s *Server) Get(sid string) {
+	s.engine.Get(sid)
+}
+
 // Remove session from sessions pool. Fixed the sessions map leak(connections, mem).
 func (s *Server) Remove(sid string) {
 	s.engine.Remove(sid)

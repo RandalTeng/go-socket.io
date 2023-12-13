@@ -1,6 +1,7 @@
 package payload
 
 import (
+	"errors"
 	"io"
 	"math"
 	"sync"
@@ -70,12 +71,12 @@ func (p *Payload) FeedIn(r io.Reader, supportBinary bool) error {
 	}
 
 	if !atomic.CompareAndSwapInt32(&p.feeding, 0, 1) {
-		return newOpError("read", errOverlap)
+		return errReadOverlap
 	}
 	defer atomic.StoreInt32(&p.feeding, 0)
 
 	if ok := p.pauser.Working(); !ok {
-		return newOpError("payload", errPaused)
+		return errPayloadPaused
 	}
 	defer p.pauser.Done()
 
@@ -134,7 +135,7 @@ func (p *Payload) FlushOut(w io.Writer) error {
 	}
 
 	if !atomic.CompareAndSwapInt32(&p.flushing, 0, 1) {
-		return newOpError("write", errOverlap)
+		return errWriteOverlap
 	}
 	defer atomic.StoreInt32(&p.flushing, 0)
 
@@ -250,15 +251,27 @@ func (p *Payload) Close() error {
 // Store stores a error in payload, and block all other request.
 func (p *Payload) Store(op string, err error) error {
 	old := p.err.Load()
-	if old == nil {
-		if err == io.EOF || err == nil {
-			return err
-		}
-		op := newOpError(op, err)
-		p.err.Store(op)
-		return op
+	if old != nil {
+		return old.(error)
 	}
-	return old.(error)
+	if err == io.EOF || err == nil {
+		return err
+	}
+	var opErr error
+	if errors.Is(err, errTimeout) {
+		switch op {
+		case "read":
+			opErr = errReadTimeout
+		case "write":
+			opErr = errWriteTimeout
+		default:
+		}
+	}
+	if opErr == nil {
+		opErr = newOpError(op, err)
+	}
+	p.err.Store(opErr)
+	return opErr
 }
 
 func (p *Payload) readTimeout() (<-chan time.Time, bool) {
@@ -295,7 +308,7 @@ func (p *Payload) getReader() (io.Reader, bool, error) {
 	}
 
 	if ok := p.pauser.Working(); !ok {
-		return nil, false, newOpError("payload", errPaused)
+		return nil, false, errPayloadPaused
 	}
 	p.pauser.Done()
 
@@ -308,7 +321,7 @@ func (p *Payload) getReader() (io.Reader, bool, error) {
 		case <-p.close:
 			return nil, false, p.load()
 		case <-p.pauser.PausedTrigger():
-			return nil, false, newOpError("payload", errPaused)
+			return nil, false, errPayloadPaused
 		case <-after:
 			continue
 		case arg := <-p.readerChan:
@@ -347,7 +360,7 @@ func (p *Payload) getWriter() (io.Writer, error) {
 	}
 
 	if ok := p.pauser.Working(); !ok {
-		return nil, newOpError("payload", errPaused)
+		return nil, errPayloadPaused
 	}
 	p.pauser.Done()
 
@@ -360,7 +373,7 @@ func (p *Payload) getWriter() (io.Writer, error) {
 		case <-p.close:
 			return nil, p.load()
 		case <-p.pauser.PausedTrigger():
-			return nil, newOpError("payload", errPaused)
+			return nil, errPayloadPaused
 		case <-after:
 			continue
 		case w := <-p.writerChan:
